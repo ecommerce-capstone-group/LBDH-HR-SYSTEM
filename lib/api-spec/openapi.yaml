@@ -1,0 +1,1759 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Los Banos Doctors Hospital HR API
+servers:
+  - url: /api
+    description: Base API path
+
+tags:
+  - name: health
+  - name: dashboard
+  - name: employees
+  - name: jobs
+  - name: applicants
+  - name: attendance
+  - name: leaves
+  - name: requests
+  - name: appraisals
+  - name: grievances
+  - name: incidents
+  - name: offboarding
+  - name: onboarding
+  - name: training
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardSummary" }
+
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: department
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Employee" }
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeInput" }
+      responses:
+        "201":
+          description: Created employee profile with one-time login credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeCreateResult" }
+
+  /employees/expiring-licenses:
+    get:
+      operationId: listExpiringLicenses
+      tags: [employees]
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, default: 30 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Employee" }
+
+  /employees/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getEmployee
+      tags: [employees]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Employee" }
+    patch:
+      operationId: updateEmployee
+      tags: [employees]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Employee" }
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      responses:
+        "204":
+          description: Deleted
+
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, description: "active | closed | filled" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Job" }
+    post:
+      operationId: createJob
+      tags: [jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+
+  /jobs/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getJob
+      tags: [jobs]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+    patch:
+      operationId: updateJob
+      tags: [jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      responses:
+        "204":
+          description: Deleted
+
+  /applicants:
+    get:
+      operationId: listApplicants
+      tags: [applicants]
+      parameters:
+        - in: query
+          name: jobId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Applicant" }
+    post:
+      operationId: createApplicant
+      tags: [applicants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicantInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Applicant" }
+
+  /applicants/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getApplicant
+      tags: [applicants]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Applicant" }
+    delete:
+      operationId: deleteApplicant
+      tags: [applicants]
+      responses:
+        "204":
+          description: Deleted
+
+  /applicants/{id}/ai-score:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: scoreApplicantAi
+      tags: [applicants]
+      summary: Run AI resume match scoring for an applicant
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Applicant" }
+
+  /attendance:
+    get:
+      operationId: listAttendance
+      tags: [attendance]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Attendance" }
+    post:
+      operationId: createAttendance
+      tags: [attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttendanceInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendance" }
+
+  /attendance/summary:
+    get:
+      operationId: getAttendanceSummary
+      tags: [attendance]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendanceSummary" }
+
+  /leaves:
+    get:
+      operationId: listLeaves
+      tags: [leaves]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LeaveRequest" }
+    post:
+      operationId: createLeave
+      tags: [leaves]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaveInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaveRequest" }
+
+  /leaves/{id}/advance:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: advanceLeave
+      tags: [leaves]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalAction" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaveRequest" }
+
+  /leaves/balances/{employeeId}:
+    parameters:
+      - in: path
+        name: employeeId
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getLeaveBalance
+      tags: [leaves]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaveBalance" }
+
+  /requests:
+    get:
+      operationId: listRequests
+      tags: [requests]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+        - in: query
+          name: type
+          schema: { $ref: "#/components/schemas/RequestType" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/HrRequest" }
+    post:
+      operationId: createRequest
+      tags: [requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HrRequestInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HrRequest" }
+
+  /requests/{id}/advance:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: advanceRequest
+      tags: [requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalAction" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HrRequest" }
+
+  /appraisals:
+    get:
+      operationId: listAppraisals
+      tags: [appraisals]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Appraisal" }
+    post:
+      operationId: createAppraisal
+      tags: [appraisals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppraisalInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appraisal" }
+
+  /appraisals/{id}/advance:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: advanceAppraisal
+      tags: [appraisals]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalAction" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appraisal" }
+
+  /appraisals/{id}/archive:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: archiveAppraisal
+      tags: [appraisals]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ArchiveAppraisalInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appraisal" }
+
+  /training-plans:
+    get:
+      operationId: listTrainingPlans
+      tags: [training]
+      parameters:
+        - in: query
+          name: year
+          schema: { type: integer }
+        - in: query
+          name: category
+          schema: { $ref: "#/components/schemas/TrainingCategory" }
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrainingPlan" }
+    post:
+      operationId: createTrainingPlan
+      tags: [training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingPlanInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingPlan" }
+
+  /training-plans/{id}/advance:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: advanceTrainingPlan
+      tags: [training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalAction" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingPlan" }
+
+  /training-plans/{id}/enroll:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: enrollTrainingPlan
+      tags: [training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingEnrollmentInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingEnrollment" }
+
+  /training-plans/{id}/assign:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: assignTrainingPlan
+      tags: [training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignTrainingPlanInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssignTrainingPlanResult" }
+
+  /training-enrollments:
+    get:
+      operationId: listTrainingEnrollments
+      tags: [training]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+        - in: query
+          name: planId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrainingEnrollment" }
+
+  /training-records:
+    get:
+      operationId: listTrainingRecords
+      tags: [training]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+        - in: query
+          name: year
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TrainingRecord" }
+    post:
+      operationId: createTrainingRecord
+      tags: [training]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TrainingRecordInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingRecord" }
+
+  /incidents:
+    get:
+      operationId: listIncidents
+      tags: [incidents]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/IncidentStatus" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmployeeIncident" }
+    post:
+      operationId: createIncident
+      tags: [incidents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeIncidentInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeIncident" }
+
+  /incidents/analytics:
+    get:
+      operationId: getIncidentAnalytics
+      tags: [incidents]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentAnalytics" }
+
+  /incidents/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    patch:
+      operationId: updateIncident
+      tags: [incidents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeIncidentUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeIncident" }
+
+  /grievances:
+    get:
+      operationId: listGrievances
+      tags: [grievances]
+      parameters:
+        - in: query
+          name: employeeId
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Grievance" }
+    post:
+      operationId: createGrievance
+      tags: [grievances]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrievanceInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Grievance" }
+
+  /offboardings:
+    get:
+      operationId: listOffboardings
+      tags: [offboarding]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Offboarding" }
+    post:
+      operationId: createOffboarding
+      tags: [offboarding]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OffboardingInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Offboarding" }
+
+  /offboardings/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    patch:
+      operationId: updateOffboarding
+      tags: [offboarding]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OffboardingUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Offboarding" }
+
+
+  /onboardings:
+    get:
+      operationId: listOnboardings
+      tags: [onboarding]
+      parameters:
+        - in: query
+          name: jobId
+          schema: { type: integer }
+        - in: query
+          name: applicantId
+          schema: { type: integer }
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Onboarding" }
+    post:
+      operationId: createOnboarding
+      tags: [onboarding]
+      summary: Start onboarding from a selected applicant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Onboarding" }
+
+  /onboardings/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getOnboarding
+      tags: [onboarding]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Onboarding" }
+    patch:
+      operationId: updateOnboarding
+      tags: [onboarding]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingUpdate" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Onboarding" }
+
+  /onboardings/{id}/create-employee:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: createEmployeeFromOnboarding
+      tags: [onboarding]
+      summary: Create employee profile from approved onboarding / applicant data
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingCreateEmployeeInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingCreateEmployeeResult" }
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+
+    DashboardSummary:
+      type: object
+      required: [totalEmployees, activeJobs, totalApplicants, pendingRequests, expiringLicenses]
+      properties:
+        totalEmployees: { type: integer }
+        activeJobs: { type: integer }
+        totalApplicants: { type: integer }
+        pendingRequests: { type: integer }
+        expiringLicenses: { type: integer }
+
+    Employee:
+      type: object
+      required: [id, name, role, department, email, status]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { type: string }
+        department: { type: string }
+        email: { type: string }
+        phone: { type: string, nullable: true }
+        licenseName: { type: string, nullable: true }
+        licenseExpiry: { type: string, nullable: true, description: "ISO date string" }
+        documents: { type: string, nullable: true }
+        vlBalance: { type: number }
+        slBalance: { type: number }
+        status: { type: string, description: "active | offboarding | left" }
+        createdAt: { type: string }
+
+    EmployeeInput:
+      type: object
+      required: [name, role, department, email]
+      properties:
+        name: { type: string }
+        role: { type: string }
+        department: { type: string }
+        email: { type: string }
+        phone: { type: string, nullable: true }
+        licenseName: { type: string, nullable: true }
+        licenseExpiry: { type: string, nullable: true }
+        documents: { type: string, nullable: true }
+        vlBalance: { type: number, nullable: true }
+        slBalance: { type: number, nullable: true }
+        status: { type: string, nullable: true }
+
+    EmployeeAccountCredentials:
+      type: object
+      required: [username, temporaryPassword]
+      properties:
+        username: { type: string }
+        temporaryPassword: { type: string }
+
+    EmployeeCreateResult:
+      allOf:
+        - $ref: "#/components/schemas/Employee"
+        - type: object
+          properties:
+            account:
+              allOf:
+                - $ref: "#/components/schemas/EmployeeAccountCredentials"
+              nullable: true
+              description: One-time credentials shown to HR after account creation
+
+    Requirement:
+      type: object
+      required: [label, kind, weight]
+      properties:
+        label: { type: string }
+        kind: { type: string, description: "checkbox | number" }
+        weight: { type: number }
+        max: { type: number, nullable: true, description: "for number kind" }
+
+    Job:
+      type: object
+      required: [id, title, department, description, requirements, staffNeeded, hiredCount, status, createdAt]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        department: { type: string }
+        description: { type: string }
+        requirements:
+          type: array
+          items: { $ref: "#/components/schemas/Requirement" }
+        staffNeeded:
+          type: integer
+          minimum: 1
+          description: Number of staff needed for this listing
+        hiredCount:
+          type: integer
+          minimum: 0
+          description: Count of onboardings for this job with status hired (computed)
+        status: { type: string, description: "active | closed | filled" }
+        createdAt: { type: string }
+
+    JobInput:
+      type: object
+      required: [title, department, description, requirements]
+      properties:
+        title: { type: string }
+        department: { type: string }
+        description: { type: string }
+        requirements:
+          type: array
+          items: { $ref: "#/components/schemas/Requirement" }
+        staffNeeded:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Number of staff needed (defaults to 1)
+        status: { type: string, nullable: true, description: "active | closed | filled" }
+
+    RequirementAnswer:
+      type: object
+      required: [label, value]
+      properties:
+        label: { type: string }
+        value:
+          oneOf:
+            - { type: boolean }
+            - { type: number }
+
+    RequirementMatch:
+      type: object
+      required: [label, kind, value, score, weight]
+      properties:
+        label: { type: string }
+        kind: { type: string }
+        value:
+          oneOf:
+            - { type: boolean }
+            - { type: number }
+        score: { type: number }
+        weight: { type: number }
+
+    AiRequirementMatch:
+      type: object
+      required: [requirement, met, confidence, evidence]
+      properties:
+        requirement: { type: string }
+        met: { type: boolean }
+        confidence: { type: number, description: "0 to 1" }
+        evidence: { type: string }
+
+    ApplicantAiEvaluation:
+      type: object
+      required: [score, summary, matches, model, evaluatedAt]
+      properties:
+        score: { type: number, description: "0 to 100" }
+        summary: { type: string }
+        matches:
+          type: array
+          items: { $ref: "#/components/schemas/AiRequirementMatch" }
+        model: { type: string }
+        evaluatedAt: { type: string }
+
+    Applicant:
+      type: object
+      required: [id, jobId, name, email, phone, skills, experience, resume, totalScore, matches, createdAt]
+      properties:
+        id: { type: integer }
+        jobId: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        skills: { type: string }
+        experience: { type: string }
+        resume: { type: string }
+        totalScore: { type: number }
+        matches:
+          type: array
+          items: { $ref: "#/components/schemas/RequirementMatch" }
+        aiScore: { type: number, nullable: true }
+        aiEvaluation: { $ref: "#/components/schemas/ApplicantAiEvaluation", nullable: true }
+        aiUpdatedAt: { type: string, nullable: true }
+        createdAt: { type: string }
+
+    ApplicantInput:
+      type: object
+      required: [jobId, name, email, phone, skills, experience, resume, answers]
+      properties:
+        jobId: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        skills: { type: string }
+        experience: { type: string }
+        resume: { type: string }
+        answers:
+          type: array
+          items: { $ref: "#/components/schemas/RequirementAnswer" }
+
+    Attendance:
+      type: object
+      required: [id, employeeId, date, status, lateMinutes, undertimeMinutes, overtimeMinutes]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        date: { type: string }
+        status: { type: string, description: "Present | Absent" }
+        lateMinutes: { type: integer }
+        undertimeMinutes: { type: integer }
+        overtimeMinutes: { type: integer }
+        notes: { type: string, nullable: true }
+
+    AttendanceInput:
+      type: object
+      required: [employeeId, date, status]
+      properties:
+        employeeId: { type: integer }
+        date: { type: string }
+        status: { type: string }
+        lateMinutes: { type: integer, nullable: true }
+        undertimeMinutes: { type: integer, nullable: true }
+        overtimeMinutes: { type: integer, nullable: true }
+        notes: { type: string, nullable: true }
+
+    AttendanceSummary:
+      type: object
+      required: [presentDays, absentDays, lateCount, totalLateMinutes, totalUndertimeMinutes, totalOvertimeMinutes]
+      properties:
+        presentDays: { type: integer }
+        absentDays: { type: integer }
+        lateCount: { type: integer }
+        totalLateMinutes: { type: integer }
+        totalUndertimeMinutes: { type: integer }
+        totalOvertimeMinutes: { type: integer }
+
+    ApprovalStep:
+      type: object
+      required: [name, status]
+      properties:
+        name: { type: string, description: "Unit Head | Department Head | Auto" }
+        status: { type: string, description: "pending | approved | rejected" }
+        actor: { type: string, nullable: true }
+        note: { type: string, nullable: true }
+        timestamp: { type: string, nullable: true }
+
+    ApprovalAction:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, description: "approve | reject" }
+        actor: { type: string, nullable: true }
+        note: { type: string, nullable: true }
+
+    LeaveRequest:
+      type: object
+      required: [id, employeeId, leaveType, startDate, endDate, days, reason, status, currentStep, steps, createdAt]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        leaveType: { type: string, description: "VL | SL" }
+        startDate: { type: string }
+        endDate: { type: string }
+        days: { type: number }
+        reason: { type: string }
+        status: { type: string, description: "pending | approved | rejected" }
+        currentStep: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalStep" }
+        createdAt: { type: string }
+
+    LeaveInput:
+      type: object
+      required: [employeeId, leaveType, startDate, endDate, days, reason]
+      properties:
+        employeeId: { type: integer }
+        leaveType: { type: string }
+        startDate: { type: string }
+        endDate: { type: string }
+        days: { type: number }
+        reason: { type: string }
+
+    LeaveBalance:
+      type: object
+      required: [employeeId, vlBalance, slBalance, vlUsed, slUsed]
+      properties:
+        employeeId: { type: integer }
+        vlBalance: { type: number }
+        slBalance: { type: number }
+        vlUsed: { type: number }
+        slUsed: { type: number }
+
+    RequestType:
+      type: string
+      enum: [overtime, loan, certificate, reliever, training]
+
+    HrRequest:
+      type: object
+      required: [id, employeeId, type, title, details, status, currentStep, steps, createdAt]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        type: { $ref: "#/components/schemas/RequestType" }
+        title: { type: string }
+        details: { type: string }
+        status: { type: string }
+        currentStep: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalStep" }
+        createdAt: { type: string }
+
+    HrRequestInput:
+      type: object
+      required: [employeeId, type, title, details]
+      properties:
+        employeeId: { type: integer }
+        type: { $ref: "#/components/schemas/RequestType" }
+        title: { type: string }
+        details: { type: string }
+
+    AppraisalTemplateType:
+      type: string
+      enum: [non_supervisory, supervisory]
+
+    AppraisalCriterionScore:
+      type: object
+      required: [criterionId, groupId, label, score]
+      properties:
+        criterionId: { type: string }
+        groupId: { type: string }
+        label: { type: string }
+        score: { type: number }
+
+    AppraisalSignatory:
+      type: object
+      required: [role, name]
+      properties:
+        role: { type: string }
+        name: { type: string }
+
+    Appraisal:
+      type: object
+      required:
+        - id
+        - employeeId
+        - templateType
+        - appraisalType
+        - employeeName
+        - department
+        - position
+        - appraisalPeriod
+        - evaluator
+        - evaluatorPosition
+        - criterionScores
+        - totalScore
+        - signatories
+        - status
+        - currentStep
+        - steps
+        - createdAt
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        templateType: { $ref: "#/components/schemas/AppraisalTemplateType" }
+        appraisalType:
+          type: string
+          description: "2nd month | 3rd month | 5th month | Other"
+        employeeName: { type: string }
+        department: { type: string }
+        position: { type: string }
+        hireDate: { type: string, nullable: true }
+        appraisalPeriod: { type: string }
+        evaluator: { type: string }
+        evaluatorPosition: { type: string }
+        appraisalDate: { type: string, nullable: true }
+        strengths: { type: string }
+        areasForImprovement: { type: string }
+        suggestedActionPlan: { type: string }
+        shortTermGoals: { type: string }
+        longTermGoals: { type: string }
+        criterionScores:
+          type: array
+          items: { $ref: "#/components/schemas/AppraisalCriterionScore" }
+        totalScore: { type: number }
+        recommendation: { type: string }
+        employeeAcknowledgement: { type: string }
+        signatories:
+          type: array
+          items: { $ref: "#/components/schemas/AppraisalSignatory" }
+        status:
+          type: string
+          description: "pending | approved | rejected | archived"
+        currentStep: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalStep" }
+        employeeSelfAssessment: { type: string }
+        appraiserComments: { type: string }
+        departmentHeadComments: { type: string }
+        hrComments: { type: string }
+        signedFormReference: { type: string }
+        archivedAt: { type: string, nullable: true }
+        createdAt: { type: string }
+
+    ArchiveAppraisalInput:
+      type: object
+      properties:
+        signedFormReference: { type: string, nullable: true }
+        actor: { type: string, nullable: true }
+
+    AppraisalInput:
+      type: object
+      required:
+        - employeeId
+        - templateType
+        - appraisalType
+        - employeeName
+        - department
+        - position
+        - appraisalPeriod
+        - evaluator
+        - evaluatorPosition
+        - criterionScores
+        - signatories
+      properties:
+        employeeId: { type: integer }
+        templateType: { $ref: "#/components/schemas/AppraisalTemplateType" }
+        appraisalType: { type: string }
+        employeeName: { type: string }
+        department: { type: string }
+        position: { type: string }
+        hireDate: { type: string, nullable: true }
+        appraisalPeriod: { type: string }
+        evaluator: { type: string }
+        evaluatorPosition: { type: string }
+        appraisalDate: { type: string, nullable: true }
+        strengths: { type: string, nullable: true }
+        areasForImprovement: { type: string, nullable: true }
+        suggestedActionPlan: { type: string, nullable: true }
+        shortTermGoals: { type: string, nullable: true }
+        longTermGoals: { type: string, nullable: true }
+        criterionScores:
+          type: array
+          items: { $ref: "#/components/schemas/AppraisalCriterionScore" }
+        recommendation: { type: string, nullable: true }
+        employeeAcknowledgement: { type: string, nullable: true }
+        signatories:
+          type: array
+          items: { $ref: "#/components/schemas/AppraisalSignatory" }
+        employeeSelfAssessment: { type: string, nullable: true }
+        appraiserComments: { type: string, nullable: true }
+        departmentHeadComments: { type: string, nullable: true }
+        hrComments: { type: string, nullable: true }
+        signedFormReference: { type: string, nullable: true }
+
+    TrainingCategory:
+      type: string
+      enum: [doh_initiated, hospital_required, departmental_request]
+
+    TrainingPlan:
+      type: object
+      required:
+        - id
+        - year
+        - category
+        - title
+        - status
+        - currentStep
+        - steps
+        - createdAt
+      properties:
+        id: { type: integer }
+        year: { type: integer }
+        category: { $ref: "#/components/schemas/TrainingCategory" }
+        title: { type: string }
+        description: { type: string }
+        trainingHours: { type: number }
+        plannedDate: { type: string, nullable: true }
+        department: { type: string, nullable: true }
+        employeeId: { type: integer, nullable: true }
+        status: { type: string, description: "draft | published | pending | approved | rejected" }
+        currentStep: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalStep" }
+        createdAt: { type: string }
+
+    TrainingPlanInput:
+      type: object
+      required: [year, category, title]
+      properties:
+        year: { type: integer }
+        category: { $ref: "#/components/schemas/TrainingCategory" }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        trainingHours: { type: number, nullable: true }
+        plannedDate: { type: string, nullable: true }
+        department: { type: string, nullable: true }
+        employeeId: { type: integer, nullable: true }
+
+    TrainingEnrollment:
+      type: object
+      required: [id, planId, employeeId, status, createdAt]
+      properties:
+        id: { type: integer }
+        planId: { type: integer }
+        employeeId: { type: integer }
+        status: { type: string, description: "enrolled | completed | withdrawn" }
+        createdAt: { type: string }
+
+    TrainingEnrollmentInput:
+      type: object
+      required: [employeeId]
+      properties:
+        employeeId: { type: integer }
+
+    AssignTrainingPlanInput:
+      type: object
+      required: [employeeIds]
+      properties:
+        employeeIds:
+          type: array
+          items: { type: integer }
+          minItems: 1
+
+    AssignTrainingPlanResult:
+      type: object
+      required: [enrolled, skippedEmployeeIds]
+      properties:
+        enrolled:
+          type: array
+          items: { $ref: "#/components/schemas/TrainingEnrollment" }
+        skippedEmployeeIds:
+          type: array
+          items: { type: integer }
+
+    TrainingRecord:
+      type: object
+      required:
+        - id
+        - employeeId
+        - trainingName
+        - trainingDate
+        - trainingHours
+        - trainingType
+        - completionStatus
+        - createdAt
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        planId: { type: integer, nullable: true }
+        enrollmentId: { type: integer, nullable: true }
+        trainingName: { type: string }
+        trainingDate: { type: string }
+        trainingHours: { type: number }
+        trainingType: { $ref: "#/components/schemas/TrainingCategory" }
+        completionStatus:
+          type: string
+          description: "scheduled | in_progress | completed | cancelled"
+        remarks: { type: string }
+        contractAgreement: { type: string }
+        fileReference: { type: string }
+        createdAt: { type: string }
+
+    TrainingRecordInput:
+      type: object
+      required:
+        - employeeId
+        - trainingName
+        - trainingDate
+        - trainingHours
+        - trainingType
+      properties:
+        employeeId: { type: integer }
+        planId: { type: integer, nullable: true }
+        enrollmentId: { type: integer, nullable: true }
+        trainingName: { type: string }
+        trainingDate: { type: string }
+        trainingHours: { type: number }
+        trainingType: { $ref: "#/components/schemas/TrainingCategory" }
+        completionStatus: { type: string, nullable: true }
+        remarks: { type: string, nullable: true }
+        contractAgreement: { type: string, nullable: true }
+        fileReference: { type: string, nullable: true }
+
+    IncidentActionTaken:
+      type: string
+      enum: [oral_reprimand, warning, suspension, other]
+
+    IncidentStatus:
+      type: string
+      enum: [ongoing, resolved]
+
+    EmployeeIncident:
+      type: object
+      required:
+        - id
+        - employeeId
+        - incidentDate
+        - policyViolated
+        - violationDescription
+        - department
+        - actionTaken
+        - status
+        - createdAt
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        incidentDate: { type: string }
+        policyViolated: { type: string }
+        violationDescription: { type: string }
+        department: { type: string }
+        actionTaken: { $ref: "#/components/schemas/IncidentActionTaken" }
+        actionDetails: { type: string }
+        status: { $ref: "#/components/schemas/IncidentStatus" }
+        hrRemarks: { type: string }
+        approvingAuthority: { type: string }
+        relatedAppraisalPeriod: { type: string, nullable: true }
+        createdAt: { type: string }
+
+    EmployeeIncidentInput:
+      type: object
+      required:
+        - employeeId
+        - incidentDate
+        - policyViolated
+        - violationDescription
+        - actionTaken
+      properties:
+        employeeId: { type: integer }
+        incidentDate: { type: string }
+        policyViolated: { type: string }
+        violationDescription: { type: string }
+        department: { type: string, nullable: true }
+        actionTaken: { $ref: "#/components/schemas/IncidentActionTaken" }
+        actionDetails: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IncidentStatus", nullable: true }
+        hrRemarks: { type: string, nullable: true }
+        approvingAuthority: { type: string, nullable: true }
+        relatedAppraisalPeriod: { type: string, nullable: true }
+
+    EmployeeIncidentUpdate:
+      type: object
+      properties:
+        incidentDate: { type: string, nullable: true }
+        policyViolated: { type: string, nullable: true }
+        violationDescription: { type: string, nullable: true }
+        department: { type: string, nullable: true }
+        actionTaken: { $ref: "#/components/schemas/IncidentActionTaken", nullable: true }
+        actionDetails: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IncidentStatus", nullable: true }
+        hrRemarks: { type: string, nullable: true }
+        approvingAuthority: { type: string, nullable: true }
+        relatedAppraisalPeriod: { type: string, nullable: true }
+
+    PolicyViolationTrend:
+      type: object
+      required: [policy, count]
+      properties:
+        policy: { type: string }
+        count: { type: integer }
+
+    RepeatedViolator:
+      type: object
+      required: [employeeId, employeeName, violationCount]
+      properties:
+        employeeId: { type: integer }
+        employeeName: { type: string }
+        violationCount: { type: integer }
+
+    ViolationAppraisalCorrelation:
+      type: object
+      required: [employeeId, employeeName, violationCount, appraisalCount]
+      properties:
+        employeeId: { type: integer }
+        employeeName: { type: string }
+        violationCount: { type: integer }
+        appraisalCount: { type: integer }
+        avgAppraisalScore: { type: number, nullable: true }
+        latestAppraisalPeriod: { type: string, nullable: true }
+
+    TrainingComplianceItem:
+      type: object
+      required: [planId, title, requiredHours, completedHours, compliancePercent, isCompliant]
+      properties:
+        planId: { type: integer }
+        title: { type: string }
+        plannedDate: { type: string, nullable: true }
+        requiredHours: { type: number }
+        completedHours: { type: number }
+        compliancePercent: { type: number }
+        isCompliant: { type: boolean }
+
+    IncidentAnalytics:
+      type: object
+      required:
+        - activeIncidents
+        - resolvedIncidents
+        - repeatedViolators
+        - policyTrends
+        - violationVsAppraisal
+        - trainingCompliance
+      properties:
+        activeIncidents: { type: integer }
+        resolvedIncidents: { type: integer }
+        repeatedViolators:
+          type: array
+          items: { $ref: "#/components/schemas/RepeatedViolator" }
+        policyTrends:
+          type: array
+          items: { $ref: "#/components/schemas/PolicyViolationTrend" }
+        violationVsAppraisal:
+          type: array
+          items: { $ref: "#/components/schemas/ViolationAppraisalCorrelation" }
+        trainingCompliance:
+          type: array
+          items: { $ref: "#/components/schemas/TrainingComplianceItem" }
+
+    Grievance:
+      type: object
+      required: [id, employeeId, subject, description, status, createdAt]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        subject: { type: string }
+        description: { type: string }
+        status: { type: string, description: "open | resolved" }
+        createdAt: { type: string }
+
+    GrievanceInput:
+      type: object
+      required: [employeeId, subject, description]
+      properties:
+        employeeId: { type: integer }
+        subject: { type: string }
+        description: { type: string }
+        status: { type: string, nullable: true }
+
+    Offboarding:
+      type: object
+      required: [id, employeeId, reason, exitInterview, hrCleared, itCleared, financeCleared, status, replacementJobId, createdAt]
+      properties:
+        id: { type: integer }
+        employeeId: { type: integer }
+        reason: { type: string }
+        exitInterview: { type: string }
+        hrCleared: { type: boolean }
+        itCleared: { type: boolean }
+        financeCleared: { type: boolean }
+        status: { type: string, description: "Pending | Completed" }
+        replacementJobId: { type: integer, nullable: true }
+        createdAt: { type: string }
+
+    OffboardingInput:
+      type: object
+      required: [employeeId, reason]
+      properties:
+        employeeId: { type: integer }
+        reason: { type: string }
+        exitInterview: { type: string, nullable: true }
+        createReplacementJob: { type: boolean, nullable: true }
+
+    OffboardingUpdate:
+      type: object
+      properties:
+        exitInterview: { type: string, nullable: true }
+        hrCleared: { type: boolean, nullable: true }
+        itCleared: { type: boolean, nullable: true }
+        financeCleared: { type: boolean, nullable: true }
+        status: { type: string, nullable: true }
+
+    PreEmploymentRequirement:
+      type: object
+      required: [label, done]
+      properties:
+        label: { type: string }
+        done: { type: boolean }
+        notes: { type: string, nullable: true }
+
+    Onboarding:
+      type: object
+      required: [id, applicantId, jobId, applicantName, applicantEmail, applicantPhone, jobTitle, jobDepartment, interviewNotes, interviewStatus, interviewResult, preEmploymentRequirements, status, hrNotes, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        applicantId: { type: integer }
+        jobId: { type: integer }
+        employeeId: { type: integer, nullable: true }
+        applicantName: { type: string }
+        applicantEmail: { type: string }
+        applicantPhone: { type: string }
+        jobTitle: { type: string }
+        jobDepartment: { type: string }
+        interviewScheduledAt: { type: string, nullable: true }
+        interviewNotes: { type: string }
+        interviewStatus: { type: string, description: "pending | scheduled | completed | passed | failed | cancelled" }
+        interviewResult: { type: string }
+        preEmploymentRequirements:
+          type: array
+          items: { $ref: "#/components/schemas/PreEmploymentRequirement" }
+        status: { type: string, description: "in_progress | approved | hired | cancelled" }
+        hrNotes: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    OnboardingInput:
+      type: object
+      required: [applicantId]
+      properties:
+        applicantId: { type: integer }
+        interviewScheduledAt: { type: string, nullable: true }
+        interviewNotes: { type: string, nullable: true }
+        hrNotes: { type: string, nullable: true }
+
+    OnboardingUpdate:
+      type: object
+      properties:
+        interviewScheduledAt: { type: string, nullable: true }
+        interviewNotes: { type: string, nullable: true }
+        interviewStatus: { type: string, nullable: true }
+        interviewResult: { type: string, nullable: true }
+        preEmploymentRequirements:
+          type: array
+          nullable: true
+          items: { $ref: "#/components/schemas/PreEmploymentRequirement" }
+        status: { type: string, nullable: true }
+        hrNotes: { type: string, nullable: true }
+
+    OnboardingCreateEmployeeInput:
+      type: object
+      properties:
+        name: { type: string, nullable: true }
+        role: { type: string, nullable: true }
+        department: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        licenseName: { type: string, nullable: true }
+        licenseExpiry: { type: string, nullable: true }
+        documents: { type: string, nullable: true }
+
+    OnboardingCreateEmployeeResult:
+      type: object
+      required: [onboarding, employee]
+      properties:
+        onboarding: { $ref: "#/components/schemas/Onboarding" }
+        employee: { $ref: "#/components/schemas/Employee" }
+        account:
+          allOf:
+            - $ref: "#/components/schemas/EmployeeAccountCredentials"
+          nullable: true
+          description: One-time credentials shown to HR after account creation
+

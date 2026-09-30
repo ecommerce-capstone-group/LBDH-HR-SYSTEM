@@ -1,0 +1,418 @@
+import { useParams, Link } from "wouter";
+import {
+  useGetJob,
+  getGetJobQueryKey,
+  useListApplicants,
+  getListApplicantsQueryKey,
+  useScoreApplicantAi,
+  useCreateOnboarding,
+  useListOnboardings,
+  getListOnboardingsQueryKey,
+  useUpdateJob,
+} from "@workspace/api-client-react";
+import type { Applicant, Job, Requirement, RequirementMatch, Onboarding } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { FitScoreBar } from "@/components/fit-score-bar";
+import { Check, X, Mail, Phone, RefreshCw, UserCheck, XCircle } from "lucide-react";
+import { asArray, isRecord } from "@/lib/api-guards";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useState } from "react";
+
+export default function JobDetail() {
+  const queryClient = useQueryClient();
+  const params = useParams();
+  const id = parseInt(params.id || "0", 10);
+  const [closing, setClosing] = useState(false);
+
+  const { data: job, isLoading: isLoadingJob } = useGetJob(id, {
+    query: { enabled: !!id, queryKey: getGetJobQueryKey(id) },
+  });
+
+  const updateJob = useUpdateJob();
+
+  const {
+    data: applicants,
+    isLoading: isLoadingApplicants,
+    isFetching: isFetchingApplicants,
+    refetch: refetchApplicants,
+    isError: applicantsError,
+  } = useListApplicants(
+    { jobId: id },
+    {
+      query: {
+        enabled: !!id,
+        queryKey: getListApplicantsQueryKey({ jobId: id }),
+        refetchOnMount: "always",
+        staleTime: 0,
+      },
+    },
+  );
+
+  const applicantRows = asArray<Applicant>(applicants);
+  const scoreApplicantAi = useScoreApplicantAi();
+  const createOnboarding = useCreateOnboarding();
+  const { data: jobOnboardings } = useListOnboardings(
+    { jobId: id },
+    {
+      query: {
+        enabled: !!id,
+        queryKey: getListOnboardingsQueryKey({ jobId: id }),
+      },
+    },
+  );
+  const onboardingByApplicantId = new Map(
+    asArray<Onboarding>(jobOnboardings).map((o) => [o.applicantId, o] as const),
+  );
+
+  if (isLoadingJob) return <div className="p-6">Loading job details...</div>;
+  if (!job || !isRecord(job) || typeof job.title !== "string") {
+    return <div className="p-6">Job not found.</div>;
+  }
+
+  const jobData = job as Job;
+  const requirements = Array.isArray(jobData.requirements) ? jobData.requirements : [];
+  const staffNeeded = jobData.staffNeeded ?? 1;
+  const hiredCount = jobData.hiredCount ?? 0;
+  const remaining = Math.max(0, staffNeeded - hiredCount);
+
+  const handleCloseJob = async () => {
+    if (jobData.status !== "active") return;
+    const ok = window.confirm(
+      `Close "${jobData.title}"? It will be removed from the careers page. Existing applicants are kept.`,
+    );
+    if (!ok) return;
+    setClosing(true);
+    try {
+      await updateJob.mutateAsync({
+        id: jobData.id,
+        data: {
+          title: jobData.title,
+          department: jobData.department,
+          description: jobData.description,
+          requirements: jobData.requirements,
+          staffNeeded,
+          status: "closed",
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: getGetJobQueryKey(id) });
+      await queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
+      toast.success("Job listing closed. New applications are blocked.");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not close job.";
+      toast.error(msg);
+    } finally {
+      setClosing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <h2 className="text-2xl font-bold tracking-tight text-gray-900">{jobData.title}</h2>
+            <StatusBadge status={jobData.status} />
+          </div>
+          <p className="text-gray-500">
+            {jobData.department} • Posted {new Date(jobData.createdAt).toLocaleDateString()}
+          </p>
+          <p className="text-sm text-gray-600 mt-1">
+            {hiredCount}/{staffNeeded} hired
+            {jobData.status === "active"
+              ? ` · ${remaining} position${remaining === 1 ? "" : "s"} available`
+              : null}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2 text-sm">
+          {jobData.status === "active" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-red-700 border-red-200 hover:bg-red-50"
+              disabled={closing || updateJob.isPending}
+              onClick={handleCloseJob}
+            >
+              <XCircle className="h-4 w-4 mr-1" />
+              {closing ? "Closing…" : "Close listing"}
+            </Button>
+          ) : null}
+          <Link href="/careers" target="_blank" className="font-medium text-primary hover:underline">
+            Public /careers
+          </Link>
+          {jobData.status === "active" ? (
+            <Link href={`/apply/${jobData.id}`} target="_blank" className="text-gray-600 hover:underline">
+              Direct apply link
+            </Link>
+          ) : (
+            <p className="text-xs text-gray-500 max-w-[14rem] text-right">
+              Listing is {jobData.status}. Applicants below are retained; new applications are blocked.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Job Description</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{jobData.description}</p>
+
+          <div className="mt-6">
+            <h4 className="text-sm font-semibold mb-3">Requirements (scoring)</h4>
+            <ul className="space-y-2">
+              {requirements.map((req: Requirement, i: number) => (
+                <li
+                  key={i}
+                  className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100"
+                >
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary/50" />
+                  <span>{req.label}</span>
+                  <span className="ml-auto text-xs font-mono bg-white px-2 py-0.5 rounded border border-gray-200">
+                    Weight: {req.weight ?? 0}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold tracking-tight text-gray-900 flex items-center gap-2">
+            Applicants
+            <span className="text-sm font-normal text-gray-500">({applicantRows.length})</span>
+          </h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetchingApplicants}
+            onClick={() => refetchApplicants()}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingApplicants ? "animate-spin" : ""}`} />
+            Refresh list
+          </Button>
+        </div>
+
+        {applicantsError ? (
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="py-6 text-sm text-red-800">
+              Could not load applicants. The API database (Render → DATABASE_URL) is missing applicant contact
+              columns. In Neon SQL Editor for that same database, run{" "}
+              <code className="text-xs bg-white px-1 rounded">scripts/migrate-applicants-email-phone.sql</code>, or
+              locally <code className="text-xs bg-white px-1 rounded">pnpm run db:fix-applicants</code> using the
+              identical connection string as Render.
+            </CardContent>
+          </Card>
+        ) : isLoadingApplicants ? (
+          <div className="text-center py-8 text-gray-500">Loading applicants...</div>
+        ) : applicantRows.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-gray-500">
+              No applicants yet. Share the{" "}
+              <Link href="/careers" className="text-primary underline">
+                careers page
+              </Link>{" "}
+              or direct apply link.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {applicantRows.map((applicant) => (
+              <Card key={applicant.id} className="overflow-hidden">
+                <div className="flex flex-col lg:flex-row">
+                  <div className="p-6 lg:w-2/5 border-b lg:border-b-0 lg:border-r border-gray-100 bg-gray-50/30 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="font-bold text-gray-900 text-lg">{applicant.name}</h4>
+                      <span className="text-xs font-mono text-gray-500 shrink-0">ID #{applicant.id}</span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Applied {new Date(applicant.createdAt).toLocaleString()}
+                    </p>
+                    <div className="flex flex-col gap-1 text-sm text-gray-600">
+                      <span className="flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5" />
+                        <a href={`mailto:${applicant.email}`} className="hover:underline">
+                          {applicant.email}
+                        </a>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5" />
+                        {applicant.phone}
+                      </span>
+                    </div>
+                    <div className="pt-2 rounded-lg border bg-white p-3">
+                      <FitScoreBar score={applicant.totalScore} size="lg" />
+                    </div>
+                    <div className="rounded-lg border bg-white p-3 space-y-2">
+                      <div className="text-sm font-semibold text-gray-700">Selection</div>
+                      {onboardingByApplicantId.get(applicant.id) ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-gray-600">
+                            Onboarding:{" "}
+                            <span className="font-medium">
+                              {onboardingByApplicantId.get(applicant.id)!.status}
+                            </span>
+                          </p>
+                          <Button type="button" size="sm" variant="outline" asChild>
+                            <Link href="/onboarding">Open onboarding</Link>
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={createOnboarding.isPending}
+                          onClick={async () => {
+                            try {
+                              await createOnboarding.mutateAsync({
+                                data: { applicantId: applicant.id },
+                              });
+                              await queryClient.invalidateQueries({
+                                queryKey: getListOnboardingsQueryKey({ jobId: id }),
+                              });
+                              toast.success("Applicant moved to onboarding");
+                            } catch (e: unknown) {
+                              const msg =
+                                e instanceof Error ? e.message : "Could not start onboarding.";
+                              toast.error(msg);
+                            }
+                          }}
+                        >
+                          <UserCheck className="h-4 w-4 mr-2" />
+                          {createOnboarding.isPending ? "Starting…" : "Start onboarding"}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="rounded-lg border bg-white p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-gray-700">AI resume match</div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={scoreApplicantAi.isPending}
+                          onClick={async () => {
+                            try {
+                              await scoreApplicantAi.mutateAsync({ id: applicant.id });
+                              await queryClient.invalidateQueries({
+                                queryKey: getListApplicantsQueryKey({ jobId: id }),
+                              });
+                              toast.success("AI scoring updated");
+                            } catch (e: unknown) {
+                              const msg =
+                                e instanceof Error ? e.message : "Could not run AI scoring. Check GEMINI_API_KEY.";
+                              toast.error("AI scoring failed", { description: msg });
+                            }
+                          }}
+                        >
+                          {scoreApplicantAi.isPending ? "Scoring…" : applicant.aiScore != null ? "Re-score" : "Run"}
+                        </Button>
+                      </div>
+                      {applicant.aiScore != null ? (
+                        <FitScoreBar score={applicant.aiScore} label="AI match score" size="md" showHint={false} />
+                      ) : (
+                        <p className="text-xs text-gray-500">
+                          Not scored yet. Click <span className="font-medium">Run</span> to compare the resume against
+                          job requirements.
+                        </p>
+                      )}
+                      {applicant.aiEvaluation?.summary ? (
+                        <p className="text-xs text-gray-600 whitespace-pre-wrap">{applicant.aiEvaluation.summary}</p>
+                      ) : null}
+
+                      {applicant.aiEvaluation?.matches?.length ? (
+                        <div className="pt-2 border-t border-gray-100">
+                          <h6 className="text-xs font-semibold text-gray-700 mb-2">Breakdown</h6>
+                          <div className="max-h-56 overflow-auto pr-1">
+                            <div className="space-y-2">
+                              {applicant.aiEvaluation.matches.map((m, i) => {
+                                const conf = Math.round((m.confidence ?? 0) * 100);
+                                return (
+                                  <div key={i} className="rounded-md border border-gray-100 bg-gray-50/30 p-2">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-medium text-gray-800 truncate" title={m.requirement}>
+                                          {m.requirement}
+                                        </p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          {m.met ? (
+                                            <Check className="h-4 w-4 text-emerald-500" />
+                                          ) : (
+                                            <X className="h-4 w-4 text-red-500" />
+                                          )}
+                                          <span className="text-xs font-mono text-gray-600">{conf}%</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <p className="text-[11px] text-gray-600 whitespace-pre-wrap mt-2 leading-snug">
+                                      <span className="font-semibold">Evidence: </span>
+                                      {m.evidence}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="p-6 lg:w-3/5 space-y-4">
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 mb-1">Skills</h5>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{applicant.skills}</p>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 mb-1">Experience</h5>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{applicant.experience}</p>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-semibold text-gray-700 mb-1">Resume</h5>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap font-mono bg-gray-50 p-3 rounded border">
+                        {applicant.resume}
+                      </p>
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-semibold mb-2 text-gray-700">Requirement Matches</h5>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+                        {asArray<RequirementMatch>(applicant.matches).map((match, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0"
+                          >
+                            <span className="text-gray-600 truncate pr-2" title={match.label}>
+                              {match.label}
+                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono text-xs">{match.score}%</span>
+                              {match.value === true ? (
+                                <Check className="h-4 w-4 text-emerald-500" />
+                              ) : match.value === false ? (
+                                <X className="h-4 w-4 text-red-500" />
+                              ) : (
+                                <span className="font-medium">{String(match.value)}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

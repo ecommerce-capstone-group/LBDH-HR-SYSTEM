@@ -1,0 +1,29 @@
+# Render Blueprint: hosts the Express API (Option B).
+# Connect this repo in Render → New → Blueprint → apply this file.
+# You must set DATABASE_URL in the Render dashboard (Neon connection string).
+
+services:
+  - type: web
+    name: doctor-hospital-hub-api
+    runtime: node
+    plan: free
+    region: oregon
+    # Do not use `corepack enable` or `npm install -g` — /usr is read-only on Render.
+    # Run pnpm via npx so it installs into the writable npm cache.
+    # NODE_ENV=production (below) skips devDependencies; esbuild is required to build.
+    buildCommand: >-
+      NODE_ENV=development npx --yes pnpm@9.15.0 install --frozen-lockfile --filter @workspace/api-server... &&
+      NODE_ENV=development npx --yes pnpm@9.15.0 --filter @workspace/api-server run build &&
+      node lib/db/scripts/migrate-appraisals.mjs &&
+      node lib/db/scripts/migrate-training-appraisals.mjs &&
+      node lib/db/scripts/migrate-employee-incidents.mjs &&
+      node lib/db/scripts/migrate-onboardings.mjs &&
+      node lib/db/scripts/ensure-jobs-staff-needed.mjs &&
+      node lib/db/scripts/migrate-employee-accounts.mjs
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false

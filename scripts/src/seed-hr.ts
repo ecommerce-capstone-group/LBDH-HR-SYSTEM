@@ -1,0 +1,635 @@
+import {
+  db,
+  employees,
+  employeeAccounts,
+  jobs,
+  applicants,
+  attendance,
+  leaves,
+  requests,
+  appraisals,
+  trainingPlans,
+  trainingRecords,
+  trainingEnrollments,
+  grievances,
+  pool,
+} from "@workspace/db";
+import type {
+  Requirement,
+  RequirementMatch,
+  ApprovalStep,
+  AppraisalCriterionScore,
+} from "@workspace/db";
+import { eq } from "drizzle-orm";
+import {
+  allCriteriaForTemplate,
+  NON_SUPERVISORY_TEMPLATE,
+  SUPERVISORY_TEMPLATE,
+} from "@workspace/db/appraisal-templates";
+import { createHash, randomBytes } from "crypto";
+
+function hashPassword(password: string, salt: string): string {
+  return createHash("sha256").update(`${salt}:${password}`).digest("hex");
+}
+
+function archivedAppraisalSteps(templateType: "non_supervisory" | "supervisory") {
+  const names =
+    templateType === "non_supervisory"
+      ? [
+          "Appraiser Evaluation",
+          "Department Head Review & Signature",
+          "HR Department Review & Signature",
+          "Employee Acknowledgement & Signature",
+        ]
+      : [
+          "Employee Self-Assessment",
+          "Appraiser Evaluation",
+          "HR Department Review & Signature",
+          "Supervisor/Manager Acknowledgement & Signature",
+        ];
+  return names.map((name) => ({
+    name,
+    status: "approved" as const,
+    actor: "system",
+    timestamp: new Date().toISOString(),
+  }));
+}
+
+function buildScores(
+  template: typeof NON_SUPERVISORY_TEMPLATE,
+  ratings: number[],
+): AppraisalCriterionScore[] {
+  const criteria = allCriteriaForTemplate(template);
+  return criteria.map((c, i) => {
+    const group = template.criterionGroups.find((g) =>
+      g.criteria.some((cr) => cr.id === c.id),
+    )!;
+    return {
+      criterionId: c.id,
+      groupId: group.id,
+      label: c.label,
+      score: ratings[i] ?? template.maxScore - 2,
+    };
+  });
+}
+
+async function run() {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS employee_accounts (
+      id serial PRIMARY KEY,
+      employee_id integer NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+      username text NOT NULL UNIQUE,
+      password_hash text NOT NULL,
+      password_salt text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+  );
+
+  const existing = await db.select().from(employees).limit(1);
+  if (existing.length > 0) {
+    // Backfill login accounts for profiles that do not have one yet.
+    const allEmps = await db.select().from(employees);
+    for (let i = 0; i < allEmps.length; i++) {
+      const emp = allEmps[i]!;
+      const [acct] = await db
+        .select()
+        .from(employeeAccounts)
+        .where(eq(employeeAccounts.employeeId, emp.id));
+      if (acct) continue;
+      const [demoTaken] = await db
+        .select()
+        .from(employeeAccounts)
+        .where(eq(employeeAccounts.username, "employee"));
+      const useDemo = i === 0 && !demoTaken;
+      const username = useDemo
+        ? "employee"
+        : emp.email.split("@")[0]?.toLowerCase().replace(/[^a-z0-9._-]/g, ".") ||
+          `emp${emp.id}`;
+      const temporaryPassword = useDemo ? "employee123" : "Temp1234!";
+      const passwordSalt = randomBytes(16).toString("hex");
+      await db.insert(employeeAccounts).values({
+        employeeId: emp.id,
+        username,
+        passwordHash: hashPassword(temporaryPassword, passwordSalt),
+        passwordSalt,
+      });
+      console.log(`Created account for ${emp.name}: ${username} / ${temporaryPassword}`);
+    }
+    console.log("Already seeded.");
+    await pool.end();
+    return;
+  }
+
+  const today = new Date();
+  const addDays = (d: number) => {
+    const x = new Date(today);
+    x.setDate(x.getDate() + d);
+    return x.toISOString().slice(0, 10);
+  };
+
+  const emps = await db
+    .insert(employees)
+    .values([
+      {
+        name: "Maria Santos",
+        role: "Registered Nurse",
+        department: "ICU",
+        email: "maria.santos@lbdh.org",
+        phone: "+63 917 555 0101",
+        licenseName: "PRC Nursing License",
+        licenseExpiry: addDays(18),
+        documents: "PRC ID, BLS Cert, IV Therapy",
+        vlBalance: 12,
+        slBalance: 10,
+      },
+      {
+        name: "Juan Dela Cruz",
+        role: "Resident Physician",
+        department: "Emergency",
+        email: "juan.delacruz@lbdh.org",
+        phone: "+63 917 555 0102",
+        licenseName: "PRC Medical License",
+        licenseExpiry: addDays(120),
+        documents: "PRC ID, ACLS, ATLS",
+        vlBalance: 15,
+        slBalance: 15,
+      },
+      {
+        name: "Anna Reyes",
+        role: "Medical Technologist",
+        department: "Laboratory",
+        email: "anna.reyes@lbdh.org",
+        phone: "+63 917 555 0103",
+        licenseName: "PRC Medtech License",
+        licenseExpiry: addDays(-10),
+        documents: "PRC ID",
+        vlBalance: 8,
+        slBalance: 9,
+      },
+      {
+        name: "Carlo Mendoza",
+        role: "Radiologic Technologist",
+        department: "Radiology",
+        email: "carlo.mendoza@lbdh.org",
+        phone: "+63 917 555 0104",
+        licenseName: "PRC RadTech License",
+        licenseExpiry: addDays(220),
+        documents: "PRC ID, Safety Cert",
+        vlBalance: 14,
+        slBalance: 12,
+      },
+      {
+        name: "Liza Bautista",
+        role: "HR Coordinator",
+        department: "Human Resources",
+        email: "liza.bautista@lbdh.org",
+        phone: "+63 917 555 0105",
+        documents: "Employee Handbook",
+        vlBalance: 13,
+        slBalance: 11,
+      },
+    ])
+    .returning();
+
+  // Linked Self-Service logins for seeded employees.
+  // First employee gets the classic demo login employee / employee123.
+  for (let i = 0; i < emps.length; i++) {
+    const emp = emps[i]!;
+    const username =
+      i === 0
+        ? "employee"
+        : emp.email.split("@")[0]?.toLowerCase().replace(/[^a-z0-9._-]/g, ".") ||
+          `emp${emp.id}`;
+    const temporaryPassword = i === 0 ? "employee123" : "Temp1234!";
+    const passwordSalt = randomBytes(16).toString("hex");
+    await db.insert(employeeAccounts).values({
+      employeeId: emp.id,
+      username,
+      passwordHash: hashPassword(temporaryPassword, passwordSalt),
+      passwordSalt,
+    });
+    console.log(`Employee login: ${username} / ${temporaryPassword}`);
+  }
+
+  const nurseReq: Requirement[] = [
+    { label: "Active PRC License", kind: "checkbox", weight: 30 },
+    { label: "BLS Certification", kind: "checkbox", weight: 15 },
+    { label: "ACLS Certification", kind: "checkbox", weight: 15 },
+    { label: "Years of Experience", kind: "number", weight: 30, max: 5 },
+    { label: "ICU Rotations Completed", kind: "number", weight: 10, max: 3 },
+  ];
+
+  const medtechReq: Requirement[] = [
+    { label: "Active PRC Medtech License", kind: "checkbox", weight: 40 },
+    { label: "Hospital Lab Experience (years)", kind: "number", weight: 35, max: 4 },
+    { label: "Phlebotomy Certified", kind: "checkbox", weight: 25 },
+  ];
+
+  const jobsRows = await db
+    .insert(jobs)
+    .values([
+      {
+        title: "Staff Nurse - ICU",
+        department: "ICU",
+        description:
+          "Provide direct patient care in the Intensive Care Unit. Monitor critically ill patients, administer medications, and collaborate with the medical team.",
+        requirements: nurseReq,
+        status: "active",
+      },
+      {
+        title: "Medical Technologist",
+        department: "Laboratory",
+        description:
+          "Perform laboratory tests on patient samples, maintain quality control, and report results accurately.",
+        requirements: medtechReq,
+        status: "active",
+      },
+      {
+        title: "Finance & Accounting Manager",
+        department: "Finance",
+        description: [
+          "Graduate of Bachelor of Science in Accountancy, Finance, or any related course",
+          "With at least 5 years managerial experience in Finance and Accounting",
+          "Preferably with hospital or healthcare industry experience",
+          "Strong background in financial reporting, budgeting and forecasting, and general accounting",
+          "Knowledgeable in Philippine accounting standards, BIR regulations, and DOH compliance",
+          "Excellent leadership and people management skills",
+          "Able to work under pressure and meet deadlines",
+        ].join("\n"),
+        requirements: [
+          { label: "Bachelor's Degree", kind: "checkbox", weight: 30 },
+          { label: "Years of Experience", kind: "number", weight: 50, max: 3 },
+          { label: "Hospital Billing Background", kind: "checkbox", weight: 20 },
+        ],
+        status: "active",
+      },
+    ])
+    .returning();
+
+  function scoreApplicant(
+    reqs: Requirement[],
+    answers: Record<string, boolean | number>,
+  ) {
+    let total = 0;
+    const matches: RequirementMatch[] = [];
+    for (const r of reqs) {
+      const value = answers[r.label];
+      let s = 0;
+      if (r.kind === "checkbox") s = value === true ? r.weight : 0;
+      else {
+        const num = typeof value === "number" ? value : 0;
+        const max = r.max && r.max > 0 ? r.max : 1;
+        s = Math.min(num / max, 1) * r.weight;
+      }
+      total += s;
+      matches.push({
+        label: r.label,
+        kind: r.kind,
+        value: value ?? (r.kind === "checkbox" ? false : 0),
+        score: Math.round(s * 100) / 100,
+        weight: r.weight,
+      });
+    }
+    return {
+      totalScore: Math.min(Math.round(total * 100) / 100, 100),
+      matches,
+    };
+  }
+
+  const nurseJob = jobsRows[0]!;
+  const medtechJob = jobsRows[1]!;
+
+  const a1 = scoreApplicant(nurseReq, {
+    "Active PRC License": true,
+    "BLS Certification": true,
+    "ACLS Certification": true,
+    "Years of Experience": 4,
+    "ICU Rotations Completed": 3,
+  });
+  const a2 = scoreApplicant(nurseReq, {
+    "Active PRC License": true,
+    "BLS Certification": true,
+    "ACLS Certification": false,
+    "Years of Experience": 2,
+    "ICU Rotations Completed": 1,
+  });
+  const a3 = scoreApplicant(medtechReq, {
+    "Active PRC Medtech License": true,
+    "Hospital Lab Experience (years)": 3,
+    "Phlebotomy Certified": true,
+  });
+
+  await db.insert(applicants).values([
+    {
+      jobId: nurseJob.id,
+      name: "Patricia Lim",
+      email: "patricia.lim@example.com",
+      phone: "+63 917 555 0201",
+      skills: "IV therapy, ventilator management, EKG interpretation",
+      experience: "4 years ICU at St. Luke's; 1 year ER",
+      resume:
+        "BSN, University of the Philippines Manila, 2020. PRC #0123456. Active member of PNA.",
+      totalScore: a1.totalScore,
+      matches: a1.matches,
+    },
+    {
+      jobId: nurseJob.id,
+      name: "Mark Villanueva",
+      email: "mark.villanueva@example.com",
+      phone: "+63 917 555 0202",
+      skills: "Bedside care, wound dressing, basic emergency response",
+      experience: "2 years ward nurse",
+      resume: "BSN, San Beda, 2022. PRC #0987654.",
+      totalScore: a2.totalScore,
+      matches: a2.matches,
+    },
+    {
+      jobId: medtechJob.id,
+      name: "Sofia Gomez",
+      email: "sofia.gomez@example.com",
+      phone: "+63 917 555 0203",
+      skills: "Hematology, urinalysis, phlebotomy, QA",
+      experience: "3 years at private hospital lab",
+      resume: "BS MedTech, FEU 2021. PRC #5566778.",
+      totalScore: a3.totalScore,
+      matches: a3.matches,
+    },
+  ]);
+
+  const dateStr = (offset: number) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const attendanceRows = [];
+  for (let i = 0; i < 10; i++) {
+    const offset = -i;
+    attendanceRows.push({
+      employeeId: emps[0]!.id,
+      date: dateStr(offset),
+      status: i === 4 ? "Absent" : "Present",
+      lateMinutes: i % 3 === 0 ? 15 : 0,
+      undertimeMinutes: i === 2 ? 20 : 0,
+      overtimeMinutes: i % 4 === 0 ? 60 : 0,
+    });
+    attendanceRows.push({
+      employeeId: emps[1]!.id,
+      date: dateStr(offset),
+      status: "Present",
+      lateMinutes: i === 1 ? 10 : 0,
+      undertimeMinutes: 0,
+      overtimeMinutes: i % 5 === 0 ? 90 : 0,
+    });
+  }
+  await db.insert(attendance).values(attendanceRows);
+
+  const baseSteps = (): ApprovalStep[] => [
+    { name: "Unit Head", status: "pending" },
+    { name: "Department Head", status: "pending" },
+    { name: "Auto", status: "pending" },
+  ];
+
+  await db.insert(leaves).values([
+    {
+      employeeId: emps[0]!.id,
+      leaveType: "VL",
+      startDate: dateStr(7),
+      endDate: dateStr(9),
+      days: 3,
+      reason: "Family vacation in Baguio",
+      status: "pending",
+      currentStep: "Unit Head",
+      steps: baseSteps(),
+    },
+    {
+      employeeId: emps[1]!.id,
+      leaveType: "SL",
+      startDate: dateStr(-3),
+      endDate: dateStr(-2),
+      days: 2,
+      reason: "Flu recovery",
+      status: "approved",
+      currentStep: "Approved",
+      steps: [
+        { name: "Unit Head", status: "approved", actor: "HR", timestamp: new Date().toISOString() },
+        { name: "Department Head", status: "approved", actor: "HR", timestamp: new Date().toISOString() },
+        { name: "Auto", status: "approved", actor: "system", timestamp: new Date().toISOString() },
+      ],
+    },
+  ]);
+
+  await db.insert(requests).values([
+    {
+      employeeId: emps[0]!.id,
+      type: "overtime",
+      title: "OT for ICU coverage",
+      details: "4 hours OT on " + dateStr(-1) + " due to staffing gap",
+      status: "pending",
+      currentStep: "Unit Head",
+      steps: baseSteps(),
+    },
+    {
+      employeeId: emps[3]!.id,
+      type: "training",
+      title: "CT Imaging Workshop",
+      details: "3-day CT advanced imaging workshop in Manila",
+      status: "pending",
+      currentStep: "Department Head",
+      steps: [
+        { name: "Unit Head", status: "approved", actor: "Unit Head", timestamp: new Date().toISOString() },
+        { name: "Department Head", status: "pending" },
+        { name: "Auto", status: "pending" },
+      ],
+    },
+    {
+      employeeId: emps[1]!.id,
+      type: "certificate",
+      title: "Certificate of Employment",
+      details: "Needed for housing loan application",
+      status: "pending",
+      currentStep: "Unit Head",
+      steps: baseSteps(),
+    },
+  ]);
+
+  const nsScores = buildScores(
+    NON_SUPERVISORY_TEMPLATE,
+    [13, 12, 14, 13, 12, 13, 14, 13, 12],
+  );
+  const supScores = buildScores(
+    SUPERVISORY_TEMPLATE,
+    [8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9],
+  );
+
+  await db.insert(appraisals).values([
+    {
+      employeeId: emps[0]!.id,
+      templateType: "non_supervisory",
+      appraisalType: "3rd month",
+      employeeName: emps[0]!.name,
+      department: emps[0]!.department,
+      position: emps[0]!.role,
+      hireDate: addDays(-90),
+      appraisalPeriod: "Jan – Mar 2026",
+      evaluator: "Dr. Ana Ramos",
+      evaluatorPosition: "ICU Head Nurse",
+      appraisalDate: addDays(0),
+      strengths: "Excellent ICU performance, strong patient advocacy.",
+      areasForImprovement: "Documentation timeliness during peak shifts.",
+      suggestedActionPlan: "Peer shadowing on charting best practices.",
+      shortTermGoals: "Complete IV therapy refresher within 6 months.",
+      longTermGoals: "Pursue charge nurse certification within 2 years.",
+      criterionScores: nsScores,
+      totalScore: nsScores.reduce((s, c) => s + c.score, 0),
+      recommendation: "Recommend for regularization.",
+      signatories: [
+        { role: "Department Head", name: "Dr. Reyes" },
+        { role: "HR", name: "Liza Bautista" },
+        { role: "Employee", name: emps[0]!.name },
+      ],
+      employeeAcknowledgement:
+        "I acknowledge that this evaluation was discussed with me.",
+      status: "archived",
+      currentStep: "Archived",
+      steps: archivedAppraisalSteps("non_supervisory"),
+      appraiserComments: "Strong performer; recommend regularization.",
+      departmentHeadComments: "Endorsed for continued employment.",
+      hrComments: "Filed and archived.",
+      signedFormReference: "HR-FILE-2026-NS-001",
+    },
+    {
+      employeeId: emps[4]!.id,
+      templateType: "supervisory",
+      appraisalType: "5th month",
+      employeeName: emps[4]!.name,
+      department: emps[4]!.department,
+      position: emps[4]!.role,
+      hireDate: addDays(-150),
+      appraisalPeriod: "Nov 2025 – Mar 2026",
+      evaluator: "HR Director",
+      evaluatorPosition: "Director of Human Resources",
+      appraisalDate: addDays(0),
+      strengths: "Strong coordination across departments.",
+      areasForImprovement: "Delegate more operational tasks to team leads.",
+      suggestedActionPlan: "Monthly leadership coaching sessions.",
+      shortTermGoals: "Roll out updated onboarding checklist.",
+      longTermGoals: "Lead HRIS implementation project.",
+      criterionScores: supScores,
+      totalScore: supScores.reduce((s, c) => s + c.score, 0),
+      recommendation: "Continue in current supervisory role.",
+      signatories: [
+        { role: "HR", name: "Liza Bautista" },
+        { role: "Supervisor/Manager", name: emps[4]!.name },
+      ],
+      employeeAcknowledgement: "I acknowledge that this evaluation was discussed with me.",
+      status: "archived",
+      currentStep: "Archived",
+      steps: archivedAppraisalSteps("supervisory"),
+      employeeSelfAssessment: "Leadership goals met for the review period.",
+      appraiserComments: "Effective HR coordination.",
+      hrComments: "Archived in personnel file.",
+      signedFormReference: "HR-FILE-2026-SUP-001",
+    },
+  ]);
+
+  const year = new Date().getFullYear();
+  const [dohPlan, hospitalPlan] = await db
+    .insert(trainingPlans)
+    .values([
+      {
+        year,
+        category: "doh_initiated",
+        title: "DOH Infection Prevention & Control Refresher",
+        description: "Mandatory DOH compliance module for clinical staff.",
+        trainingHours: 8,
+        plannedDate: addDays(30),
+        status: "published",
+        currentStep: "",
+        steps: [],
+      },
+      {
+        year,
+        category: "hospital_required",
+        title: "BLS / ACLS Recertification",
+        description: "Hospital-wide life support recertification.",
+        trainingHours: 16,
+        plannedDate: addDays(45),
+        status: "published",
+        currentStep: "",
+        steps: [],
+      },
+      {
+        year,
+        category: "departmental_request",
+        title: "ICU Ventilator Management Workshop",
+        description: "Requested by ICU for advanced ventilator skills.",
+        trainingHours: 12,
+        plannedDate: addDays(60),
+        department: "ICU",
+        employeeId: emps[0]!.id,
+        status: "pending",
+        currentStep: "Department Head",
+        steps: [
+          {
+            name: "Unit Head",
+            status: "approved",
+            actor: "Unit Head",
+            timestamp: new Date().toISOString(),
+          },
+          { name: "Department Head", status: "pending" },
+          { name: "HR", status: "pending" },
+        ],
+      },
+    ])
+    .returning();
+
+  await db.insert(trainingEnrollments).values({
+    planId: hospitalPlan!.id,
+    employeeId: emps[0]!.id,
+    status: "enrolled",
+  });
+
+  await db.insert(trainingRecords).values([
+    {
+      employeeId: emps[0]!.id,
+      planId: dohPlan!.id,
+      trainingName: "DOH IPC Refresher 2025",
+      trainingDate: addDays(-120),
+      trainingHours: 8,
+      trainingType: "doh_initiated",
+      completionStatus: "completed",
+      remarks: "Completed with certificate on file.",
+      contractAgreement: "N/A — mandatory compliance",
+      fileReference: "TRAIN-CERT-2025-IPC-001",
+    },
+    {
+      employeeId: emps[1]!.id,
+      trainingName: "Emergency Trauma Update",
+      trainingDate: addDays(-60),
+      trainingHours: 6,
+      trainingType: "hospital_required",
+      completionStatus: "completed",
+      remarks: "ER department in-service.",
+      fileReference: "TRAIN-ER-2025-06",
+    },
+  ]);
+
+  await db.insert(grievances).values([
+    {
+      employeeId: emps[2]!.id,
+      subject: "Lab equipment downtime",
+      description:
+        "Hematology analyzer down 3x this month, slowing turnaround.",
+      status: "open",
+    },
+  ]);
+
+  console.log("Seeded HR data.");
+  await pool.end();
+}
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

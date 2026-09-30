@@ -1,0 +1,2 @@
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS staff_needed integer NOT NULL DEFAULT 1;
