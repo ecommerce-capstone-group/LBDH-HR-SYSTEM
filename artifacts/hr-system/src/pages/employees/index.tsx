@@ -34,10 +34,14 @@ import {
   EmployeeCredentialsDialog,
   type EmployeeAccountCredentials,
 } from "@/components/employee-credentials-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { mergeCatalogOptions, SYSTEM_DEPARTMENTS, SYSTEM_ROLES } from "@/lib/staff-catalog";
-
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function Employees() {
   const { user } = useAuth();
@@ -179,35 +183,33 @@ export default function Employees() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-role">Role / title *</Label>
-              <select
-                id="emp-role"
-                className={selectClass}
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="">Select a role</option>
-                {roleOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger id="emp-role">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roleOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-dept">Department *</Label>
-              <select
-                id="emp-dept"
-                className={selectClass}
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-              >
-                <option value="">Select a department</option>
-                {departmentOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
+              <Select value={department} onValueChange={setDepartment}>
+                <SelectTrigger id="emp-dept">
+                  <SelectValue placeholder="Select a department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departmentOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-email">Email *</Label>
