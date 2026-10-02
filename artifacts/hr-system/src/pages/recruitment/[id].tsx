@@ -305,7 +305,11 @@ export default function JobDetail() {
                               await queryClient.invalidateQueries({
                                 queryKey: getListApplicantsQueryKey({ jobId: id }),
                               });
-                              toast.success("AI scoring updated");
+                              toast.success(
+                                applicant.aiScore != null
+                                  ? "AI match unchanged"
+                                  : "AI scoring saved",
+                              );
                             } catch (e: unknown) {
                               const msg =
                                 e instanceof Error ? e.message : "Could not run AI scoring. Check GEMINI_API_KEY.";
@@ -313,47 +317,87 @@ export default function JobDetail() {
                             }
                           }}
                         >
-                          {scoreApplicantAi.isPending ? "Scoring…" : applicant.aiScore != null ? "Re-score" : "Run"}
+                          {scoreApplicantAi.isPending ? "Scoring…" : "Resume match"}
                         </Button>
                       </div>
                       {applicant.aiScore != null ? (
                         <FitScoreBar score={applicant.aiScore} label="AI match score" size="md" showHint={false} />
                       ) : (
                         <p className="text-xs text-gray-500">
-                          Not scored yet. Click <span className="font-medium">Run</span> to compare the resume against
-                          job requirements.
+                          Not scored yet. Click <span className="font-medium">Resume match</span> to compare the resume
+                          against job qualifications. Each qualification is weighted equally.
                         </p>
                       )}
-                      {applicant.aiEvaluation?.summary ? (
+                      {applicant.aiEvaluation?.scoringExplanation ? (
+                        <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed rounded-md bg-gray-50 border border-gray-100 p-2">
+                          {applicant.aiEvaluation.scoringExplanation}
+                        </p>
+                      ) : applicant.aiEvaluation?.summary ? (
+                        <p className="text-xs text-gray-600 whitespace-pre-wrap">{applicant.aiEvaluation.summary}</p>
+                      ) : null}
+                      {applicant.aiEvaluation?.summary && applicant.aiEvaluation?.scoringExplanation ? (
                         <p className="text-xs text-gray-600 whitespace-pre-wrap">{applicant.aiEvaluation.summary}</p>
                       ) : null}
 
                       {applicant.aiEvaluation?.matches?.length ? (
                         <div className="pt-2 border-t border-gray-100">
-                          <h6 className="text-xs font-semibold text-gray-700 mb-2">Breakdown</h6>
-                          <div className="max-h-56 overflow-auto pr-1">
+                          <h6 className="text-xs font-semibold text-gray-700 mb-1">Score breakdown</h6>
+                          <p className="text-[11px] text-gray-500 mb-2">
+                            {applicant.aiEvaluation.matches.length} categories ×{" "}
+                            {(
+                              applicant.aiEvaluation.matches[0]?.weightPercent ??
+                              100 / applicant.aiEvaluation.matches.length
+                            ).toFixed(2)}
+                            % each = 100%
+                          </p>
+                          <div className="max-h-72 overflow-auto pr-1">
                             <div className="space-y-2">
                               {applicant.aiEvaluation.matches.map((m, i) => {
-                                const conf = Math.round((m.confidence ?? 0) * 100);
+                                const n = applicant.aiEvaluation?.matches?.length ?? 1;
+                                const weight = m.weightPercent ?? Math.round((100 / n) * 100) / 100;
+                                const points =
+                                  m.pointsAwarded ??
+                                  (m.status === "partial" ? weight / 2 : m.met ? weight : 0);
+                                const status = m.status ?? (m.met ? "full" : "none");
+                                const statusLabel =
+                                  status === "full" ? "Full" : status === "partial" ? "Partial (½)" : "Not met";
+                                const statusClass =
+                                  status === "full"
+                                    ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+                                    : status === "partial"
+                                      ? "text-amber-800 bg-amber-50 border-amber-100"
+                                      : "text-red-700 bg-red-50 border-red-100";
                                 return (
                                   <div key={i} className="rounded-md border border-gray-100 bg-gray-50/30 p-2">
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="min-w-0">
-                                        <p className="text-xs font-medium text-gray-800 truncate" title={m.requirement}>
+                                        <p className="text-xs font-medium text-gray-800" title={m.requirement}>
                                           {m.requirement}
                                         </p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                          {m.met ? (
+                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                          {status === "full" ? (
                                             <Check className="h-4 w-4 text-emerald-500" />
+                                          ) : status === "partial" ? (
+                                            <span className="text-amber-600 text-xs font-bold">½</span>
                                           ) : (
                                             <X className="h-4 w-4 text-red-500" />
                                           )}
-                                          <span className="text-xs font-mono text-gray-600">{conf}%</span>
+                                          <span
+                                            className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${statusClass}`}
+                                          >
+                                            {statusLabel}
+                                          </span>
                                         </div>
+                                      </div>
+                                      <div className="shrink-0 text-right">
+                                        <p className="text-xs font-mono font-semibold text-gray-900">
+                                          {points.toFixed(2)} / {weight.toFixed(2)}
+                                        </p>
+                                        <p className="text-[10px] text-gray-500">pts of 100</p>
                                       </div>
                                     </div>
                                     <p className="text-[11px] text-gray-600 whitespace-pre-wrap mt-2 leading-snug">
-                                      <span className="font-semibold">Evidence: </span>
+                                      <span className="font-semibold">Why: </span>
                                       {m.evidence}
                                     </p>
                                   </div>
@@ -361,6 +405,9 @@ export default function JobDetail() {
                               })}
                             </div>
                           </div>
+                          <p className="text-xs font-medium text-gray-800 mt-2 pt-2 border-t border-gray-100">
+                            Total {applicant.aiScore ?? 0}% / 100%
+                          </p>
                         </div>
                       ) : null}
                     </div>

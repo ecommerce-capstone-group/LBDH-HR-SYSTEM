@@ -122,6 +122,12 @@ export interface AiRequirementMatch {
   /** 0 to 1 */
   confidence: number;
   evidence: string;
+  /** full = all points, partial = half, none = 0 */
+  status?: "full" | "partial" | "none";
+  /** Equal share of 100 for this category */
+  weightPercent?: number;
+  /** Points this category contributed to the 0-100 score */
+  pointsAwarded?: number;
 }
 
 export interface ApplicantAiEvaluation {
@@ -131,6 +137,8 @@ export interface ApplicantAiEvaluation {
   matches: AiRequirementMatch[];
   model: string;
   evaluatedAt: string;
+  categoryCount?: number;
+  scoringExplanation?: string;
 }
 
 export interface Applicant {

@@ -6,7 +6,10 @@ import {
   useListEmployees,
   getListEmployeesQueryKey,
   useCreateEmployee,
+  useListJobs,
+  getListJobsQueryKey,
   type Employee,
+  type Job,
 } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +34,10 @@ import {
   EmployeeCredentialsDialog,
   type EmployeeAccountCredentials,
 } from "@/components/employee-credentials-dialog";
+import { mergeCatalogOptions, SYSTEM_DEPARTMENTS, SYSTEM_ROLES } from "@/lib/staff-catalog";
+
+const selectClass =
+  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export default function Employees() {
   const { user } = useAuth();
@@ -52,9 +59,27 @@ export default function Employees() {
     { query: { queryKey: getListEmployeesQueryKey({ search }) } },
   );
 
+  const { data: allEmployees } = useListEmployees(undefined, {
+    query: { queryKey: getListEmployeesQueryKey() },
+  });
+
+  const { data: jobs } = useListJobs(undefined, {
+    query: { queryKey: getListJobsQueryKey() },
+  });
+
   const createEmployee = useCreateEmployee();
 
   const rows = asArray<Employee>(employees);
+  const roleOptions = mergeCatalogOptions(
+    SYSTEM_ROLES,
+    asArray<Employee>(allEmployees).map((e) => e.role),
+    asArray<Job>(jobs).map((j) => j.title),
+  );
+  const departmentOptions = mergeCatalogOptions(
+    SYSTEM_DEPARTMENTS,
+    asArray<Employee>(allEmployees).map((e) => e.department),
+    asArray<Job>(jobs).map((j) => j.department),
+  );
 
   const resetForm = () => {
     setName("");
@@ -154,11 +179,35 @@ export default function Employees() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-role">Role / title *</Label>
-              <Input id="emp-role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Registered Nurse" />
+              <select
+                id="emp-role"
+                className={selectClass}
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+              >
+                <option value="">Select a role</option>
+                {roleOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-dept">Department *</Label>
-              <Input id="emp-dept" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="ICU" />
+              <select
+                id="emp-dept"
+                className={selectClass}
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+              >
+                <option value="">Select a department</option>
+                {departmentOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="emp-email">Email *</Label>

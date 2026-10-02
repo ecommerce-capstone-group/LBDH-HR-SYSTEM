@@ -10,7 +10,6 @@ import { useLocation } from "wouter";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
-import Payslip from "@/pages/payslip";
 import Reports from "@/pages/reports";
 import Employees from "@/pages/employees";
 import EmployeeDetail from "@/pages/employees/[id]";
@@ -93,7 +92,6 @@ function App() {
             <Route path="/offboarding">{() => <ProtectedRoute component={Offboarding} roles={["hr"]} />}</Route>
             <Route path="/reports">{() => <ProtectedRoute component={Reports} roles={["hr"]} />}</Route>
             <Route path="/self-service">{() => <ProtectedRoute component={SelfService} roles={["employee"]} />}</Route>
-            <Route path="/payslip">{() => <ProtectedRoute component={Payslip} roles={["employee"]} />}</Route>
             <Route component={NotFound} />
           </Switch>
         </WouterRouter>

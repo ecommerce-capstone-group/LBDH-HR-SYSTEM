@@ -38,6 +38,152 @@ async function pickSupportedGeminiModel(apiKey: string): Promise<string> {
   return preferred.name.startsWith("models/") ? preferred.name.slice("models/".length) : preferred.name;
 }
 
+type MatchStatus = "full" | "partial" | "none";
+
+function normalizeKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function uniqueNonEmpty(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of items) {
+    const text = raw.trim();
+    if (!text) continue;
+    const key = normalizeKey(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+function jobQualificationCategories(job: { description?: string | null; requirements?: Requirement[] | null }): string[] {
+  const descLines = uniqueNonEmpty(String(job.description || "").split(/\r?\n/g));
+  const reqLabels = uniqueNonEmpty(
+    (Array.isArray(job.requirements) ? job.requirements : [])
+      .map((r) => r.label)
+      .filter((label) => label.trim().toLowerCase() !== "meets posted qualifications"),
+  );
+  // Posted jobs use one qualification per description line; seeded jobs use structured requirement labels.
+  if (descLines.length >= 2) return descLines.slice(0, 30);
+  if (reqLabels.length > 0) return reqLabels.slice(0, 30);
+  if (descLines.length > 0) return descLines.slice(0, 30);
+  return ["Overall fit for the posted role"];
+}
+
+/** Split 100 into n nearly-equal percentages that always sum to 100. */
+function equalWeights(n: number): number[] {
+  if (n <= 0) return [];
+  if (n === 1) return [100];
+  const cents = Array.from({ length: n }, () => Math.floor(10000 / n));
+  let rem = 10000 - cents[0]! * n;
+  for (let i = 0; i < rem; i++) cents[i] = (cents[i] ?? 0) + 1;
+  return cents.map((c) => c / 100);
+}
+
+function parseStatus(raw: unknown, met: boolean): MatchStatus {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "full" || s === "met" || s === "yes") return "full";
+  if (s === "partial" || s === "some") return "partial";
+  if (s === "none" || s === "not_met" || s === "no") return "none";
+  return met ? "full" : "none";
+}
+
+function fulfillment(status: MatchStatus): number {
+  if (status === "full") return 1;
+  if (status === "partial") return 0.5;
+  return 0;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function buildScoredEvaluation(args: {
+  categories: string[];
+  rawMatches: Array<{
+    requirement?: unknown;
+    met?: unknown;
+    status?: unknown;
+    confidence?: unknown;
+    evidence?: unknown;
+  }>;
+  model: string;
+}): ApplicantAiEvaluation {
+  const weights = equalWeights(args.categories.length);
+  const byKey = new Map<string, (typeof args.rawMatches)[number]>();
+  for (const m of args.rawMatches) {
+    if (typeof m.requirement === "string" && m.requirement.trim()) {
+      byKey.set(normalizeKey(m.requirement), m);
+    }
+  }
+
+  const matches: ApplicantAiEvaluation["matches"] = args.categories.map((requirement, i) => {
+    const raw = byKey.get(normalizeKey(requirement)) ?? args.rawMatches[i];
+    const met = raw?.met === true;
+    const status = parseStatus(raw?.status, met);
+    const confidenceRaw = typeof raw?.confidence === "number" ? raw.confidence : status === "full" ? 1 : status === "partial" ? 0.5 : 0;
+    const confidence = Math.min(1, Math.max(0, confidenceRaw));
+    const evidence =
+      typeof raw?.evidence === "string" && raw.evidence.trim()
+        ? raw.evidence.trim()
+        : status === "none"
+          ? "No supporting evidence found in the resume, skills, or experience."
+          : "Evidence was not provided.";
+    const weightPercent = weights[i] ?? 0;
+    const pointsAwarded = round2(fulfillment(status) * weightPercent);
+    return {
+      requirement,
+      met: status === "full",
+      status,
+      confidence,
+      evidence,
+      weightPercent,
+      pointsAwarded,
+    };
+  });
+
+  const score = Math.min(100, Math.max(0, round2(matches.reduce((sum, m) => sum + (m.pointsAwarded ?? 0), 0))));
+  const n = matches.length;
+  const each = n > 0 ? (weights[0] ?? 0) : 0;
+  const full = matches.filter((m) => m.status === "full");
+  const partial = matches.filter((m) => m.status === "partial");
+  const none = matches.filter((m) => m.status === "none");
+  const fullPts = round2(full.reduce((s, m) => s + (m.pointsAwarded ?? 0), 0));
+  const partialPts = round2(partial.reduce((s, m) => s + (m.pointsAwarded ?? 0), 0));
+
+  const scoringExplanation =
+    n === 0
+      ? "No qualifications were available to score."
+      : [
+          `${n} qualification${n === 1 ? "" : "s"}, each worth ${each.toFixed(2)}% of the total (equal weight, summing to 100%).`,
+          `Full match (${full.length}): ${fullPts}%. Partial match (${partial.length}, half credit): ${partialPts}%. Not met (${none.length}): 0%.`,
+          `Total: ${fullPts} + ${partialPts} + 0 = ${score}%.`,
+          none.length
+            ? `Not met: ${none.map((m) => m.requirement).join("; ")}.`
+            : "Every qualification received at least partial credit.",
+        ].join(" ");
+
+  const missingNames = none.map((m) => m.requirement);
+  const summary = [
+    `AI resume match is ${score}% out of 100.`,
+    `Each of the ${n} qualifications counts equally (~${each.toFixed(1)}%).`,
+    `${full.length} fully met, ${partial.length} partial, ${none.length} not met.`,
+    missingNames.length ? `Gaps: ${missingNames.join("; ")}.` : "No unmet qualifications.",
+  ].join(" ");
+
+  return {
+    score,
+    summary,
+    matches,
+    model: args.model,
+    evaluatedAt: new Date().toISOString(),
+    categoryCount: n,
+    scoringExplanation,
+  };
+}
+
 function assertAiEvaluation(value: unknown): asserts value is ApplicantAiEvaluation {
   if (!value || typeof value !== "object") throw new Error("AI evaluation is not an object");
   const v = value as any;
@@ -67,6 +213,14 @@ function extractJsonObject(text: string): string | null {
   return text.slice(start, end + 1);
 }
 
+const GEMINI_GENERATION_CONFIG = {
+  temperature: 0,
+  topP: 0,
+  topK: 1,
+  candidateCount: 1,
+  seed: 0,
+};
+
 async function runGeminiAiEvaluation(args: {
   model: string;
   apiKey: string;
@@ -84,32 +238,40 @@ async function runGeminiAiEvaluation(args: {
       apiKey,
     )}`;
 
-  const requirementsText = args.requirements.map((r) => `- ${r}`).join("\n");
+  const numberedReqs = args.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n");
+  const n = args.requirements.length;
 
   const systemInstruction =
-    "You are an HR screening assistant. Score ONLY against the provided job requirements. " +
-    "Do not use protected attributes (age, gender, religion, etc.) and do not guess missing info. " +
-    "If evidence is missing, mark as not met and say what is missing.";
+    "You are an HR screening assistant. Judge ONLY the listed qualifications, in the given order. " +
+    "Do not use protected attributes (age, gender, religion, etc.). Do not guess missing information. " +
+    "Do not invent extra qualifications. Do not compute an overall score.";
 
   const userPrompt = `Return ONLY valid JSON (no markdown, no backticks) matching this schema:
 {
-  "score": number, // 0-100 overall match
-  "summary": string, // 1-3 short sentences
   "matches": [
     {
-      "requirement": string,
-      "met": boolean,
-      "confidence": number, // 0 to 1
-      "evidence": string // quote or paraphrase from resume/skills/experience
+      "requirement": string, // copy the qualification text EXACTLY
+      "status": "full" | "partial" | "none",
+      "met": boolean, // true only when status is "full"
+      "confidence": number, // 0 to 1, certainty of this judgment
+      "evidence": string // quote/paraphrase from resume/skills/experience, or what is missing
     }
   ]
 }
 
+Rules:
+- Return exactly ${n} match objects, one per qualification, same order.
+- status "full": resume/skills/experience clearly satisfy the qualification.
+- status "partial": some relevant evidence, but not enough to fully meet it.
+- status "none": missing, contradicted, or cannot be verified.
+- Be consistent: the same resume and qualifications must produce the same statuses.
+
 Job:
 Title: ${args.jobTitle}
 Department: ${args.jobDepartment}
-Requirements:
-${requirementsText}
+
+Qualifications (equal weight; the server will score them):
+${numberedReqs}
 
 Applicant:
 Name: ${args.applicantName}
@@ -123,6 +285,12 @@ Resume (text):
 ${args.resume}
 `;
 
+  const payload = {
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    generationConfig: GEMINI_GENERATION_CONFIG,
+  };
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
@@ -130,25 +298,16 @@ ${args.resume}
     let resp = await fetch(makeUrl(activeModel), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: { temperature: 0.2 },
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
     if (resp.status === 404) {
-      // Model not found / not supported for generateContent → pick a supported one automatically.
       activeModel = await pickSupportedGeminiModel(apiKey);
       resp = await fetch(makeUrl(activeModel), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          generationConfig: { temperature: 0.2 },
-        }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
     }
@@ -169,11 +328,12 @@ ${args.resume}
 
     const jsonText = extractJsonObject(text) ?? text.trim();
     const parsed = JSON.parse(jsonText);
-    const enriched: ApplicantAiEvaluation = {
-      ...parsed,
+    const rawMatches = Array.isArray(parsed?.matches) ? parsed.matches : [];
+    const enriched = buildScoredEvaluation({
+      categories: args.requirements,
+      rawMatches,
       model: activeModel,
-      evaluatedAt: new Date().toISOString(),
-    };
+    });
     assertAiEvaluation(enriched);
     return enriched;
   } finally {
@@ -292,18 +452,25 @@ router.post("/applicants/:id/ai-score", async (req, res) => {
     const [applicant] = await db.select().from(applicants).where(eq(applicants.id, id));
     if (!applicant) return res.status(404).json({ error: "Applicant not found" });
 
+    if (applicant.aiEvaluation) {
+      try {
+        assertAiEvaluation(applicant.aiEvaluation);
+        const scored = applicant.aiEvaluation.matches.every(
+          (m) => typeof m.weightPercent === "number" && typeof m.pointsAwarded === "number",
+        );
+        if (scored) return res.json(applicant);
+      } catch {
+        // Stored evaluation is incomplete; re-run once and persist.
+      }
+    }
+
     const [job] = await db.select().from(jobs).where(eq(jobs.id, applicant.jobId));
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    const reqsFromWeights = Array.isArray(job.requirements)
-      ? (job.requirements as Requirement[]).map((r) => r.label)
-      : [];
-    const reqsFromDescription = String(job.description || "")
-      .split(/\r?\n/g)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const uniqueReqs = Array.from(new Set([...reqsFromWeights, ...reqsFromDescription])).slice(0, 30);
+    const uniqueReqs = jobQualificationCategories({
+      description: job.description,
+      requirements: Array.isArray(job.requirements) ? (job.requirements as Requirement[]) : [],
+    });
 
     const evaluation = await runGeminiAiEvaluation({
       model: GEMINI_DEFAULT_MODEL,

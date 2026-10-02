@@ -1055,6 +1055,9 @@ components:
         met: { type: boolean }
         confidence: { type: number, description: "0 to 1" }
         evidence: { type: string }
+        status: { type: string, enum: [full, partial, none] }
+        weightPercent: { type: number, description: "Equal share of 100 for this category" }
+        pointsAwarded: { type: number, description: "Points this category contributed to the 0-100 score" }
 
     ApplicantAiEvaluation:
       type: object
@@ -1067,6 +1070,8 @@ components:
           items: { $ref: "#/components/schemas/AiRequirementMatch" }
         model: { type: string }
         evaluatedAt: { type: string }
+        categoryCount: { type: integer }
+        scoringExplanation: { type: string }
 
     Applicant:
       type: object

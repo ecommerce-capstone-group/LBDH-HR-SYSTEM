@@ -78,6 +78,12 @@ export type AiRequirementMatch = {
   met: boolean;
   confidence: number;
   evidence: string;
+  /** full = all points, partial = half, none = 0 */
+  status?: "full" | "partial" | "none";
+  /** Equal share of 100 (e.g. 14.29 when there are 7 categories) */
+  weightPercent?: number;
+  /** Points this category contributed to the overall 0–100 score */
+  pointsAwarded?: number;
 };
 
 export type ApplicantAiEvaluation = {
@@ -86,6 +92,8 @@ export type ApplicantAiEvaluation = {
   matches: AiRequirementMatch[];
   model: string;
   evaluatedAt: string;
+  categoryCount?: number;
+  scoringExplanation?: string;
 };
 
 export const applicants = pgTable("applicants", {
